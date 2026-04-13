@@ -9,7 +9,6 @@ import { Link } from 'react-router-dom';
 const LandingPage = () => {
   return (
     <>
-      <Navbar />
       <div style={{ width: '100%', overflowX: 'hidden' }}>
         {/* HERO SECTION */}
         <section style={{

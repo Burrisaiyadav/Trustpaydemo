@@ -35,7 +35,7 @@ public class BootstrapData implements ApplicationRunner {
                     .password(passwordEncoder.encode("password123"))
                     .email("worker@trustpay.ai")
                     .role("ROLE_WORKER")
-                    .partnerId("SWG-7721")
+                    .workerID("SWG-7721")
                     .build();
             userRepository.save(worker);
             log.info("Created demo worker: demo_worker");

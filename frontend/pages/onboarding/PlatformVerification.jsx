@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import api from '../../services/api';
-import './Onboarding.css';
+import '../Onboarding.css';
 
 const PlatformVerification = ({ onComplete }) => {
   const [platform, setPlatform] = useState('Swiggy');

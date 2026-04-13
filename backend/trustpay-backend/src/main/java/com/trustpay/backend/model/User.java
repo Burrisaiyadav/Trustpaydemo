@@ -74,6 +74,7 @@ public class User {
     // --- LOCATION ---
     private Double latitude;
     private Double longitude;
+    private String currentH3Index;
     private LocalDateTime lastLocationUpdate;
 
     // --- ACCOUNT STATUS ---

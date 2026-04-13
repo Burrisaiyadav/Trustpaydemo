@@ -42,7 +42,7 @@ public class LocationController {
                     user.setLongitude(lng);
 
                     // 2. Map to H3 Grid
-                    String h3Index = geospatialService.latLngToH3(lat, lng);
+                    String h3Index = geospatialService.latLngToH3(lat, lng, 9);
                     user.setCurrentH3Index(h3Index);
 
                     userRepository.save(user);

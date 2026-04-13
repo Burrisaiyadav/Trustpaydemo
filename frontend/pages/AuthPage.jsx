@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuthStore, findUser, updatePassword } from "../store/authStore";
-import { ShieldCheck, Circle, AlertCircle, Shield } from "lucide-react";
+import { ShieldCheck, Eye, EyeOff, AlertCircle, Shield } from "lucide-react";
 import api from "../services/api.js";
 import "./Auth.css";
 
