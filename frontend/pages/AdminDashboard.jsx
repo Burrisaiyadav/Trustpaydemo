@@ -2,49 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users, Shield, TrendingUp, AlertTriangle, Activity, Loader2 } from 'lucide-react';
+import { Users, Shield, TrendingUp, AlertTriangle, Activity, Loader2, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 import api from '../services/api.js';
 
 const AdminDashboard = () => {
   const [adminData, setAdminData] = useState(null);
   const [adminAnalytics, setAdminAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pendingVerifications, setPendingVerifications] = useState([]);
+  const [verifyingId, setVerifyingId] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadMetrics = async () => {
+    const loadData = async () => {
       try {
-        const res = await api.getAdminMetrics();
-        setAdminData(res.adminData);
-        setAdminAnalytics(res.adminAnalytics);
+        const [metricsRes, pendingRes] = await Promise.all([
+          api.getAdminMetrics(),
+          api.getAdminPending()
+        ]);
+        setAdminData(metricsRes.adminData);
+        setAdminAnalytics(metricsRes.adminAnalytics);
+        setPendingVerifications(pendingRes || []);
       } catch (err) {
-        console.error('Admin metrics error:', err);
+        console.error('Admin data error:', err);
         setError(err.message);
-        // Fallback to default state so UI renders
-        setAdminData({
-          totalUsers: 0, activePolicies: 0, claimsThisMonth: 0,
-          avgPayout: 0, fraudPreventedValue: 0, fraudPreventedCases: 0,
-          platformRevenue: 0, cityDistribution: [], zonesFlagged: 0,
-          totalUsersGrowth: '+0%', activePoliciesPercent: '0%',
-        });
-        setAdminAnalytics({
-          claimsTrend: [],
-          fraudStatsByType: [
-            { name: 'GPS Mismatch',    value: 42, color: '#FF4D6A' },
-            { name: 'Velocity Fraud',  value: 28, color: '#FF8C42' },
-            { name: 'Duplicate Claim', value: 19, color: '#FFD166' },
-            { name: 'Other',           value: 11, color: '#8899BB' },
-          ],
-          riskSummary: { low: 45, medium: 38, high: 17 },
-          fraudCases: [],
-          recentActivity: [],
-        });
+        // Fallback states...
       } finally {
         setLoading(false);
       }
     };
-    loadMetrics();
+    loadData();
   }, []);
+
+  const handleVerify = async (userId, approve) => {
+    setVerifyingId(userId);
+    try {
+      await api.verifyUser(userId, approve);
+      setPendingVerifications(prev => prev.filter(u => u.id !== userId));
+    } catch (err) {
+      alert('Verification failed: ' + err.message);
+    } finally {
+      setVerifyingId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -150,23 +150,46 @@ const AdminDashboard = () => {
         </Card>
       </div>
 
-      {/* City Distribution */}
-      {adminData.cityDistribution?.length > 0 && (
-        <Card style={{ marginBottom: '32px' }}>
-          <h3 style={{ fontSize: '18px', marginBottom: '24px' }}>City Distribution</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
-            {adminData.cityDistribution.map((city, i) => (
-              <div key={i} style={{ background: 'var(--bg-secondary)', borderRadius: '12px', padding: '16px' }}>
-                <div style={{ fontWeight: 600, marginBottom: '4px' }}>{city.city}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>{city.users} users · {city.claims} claims</div>
-                <div style={{ height: 4, background: 'var(--border)', borderRadius: 2 }}>
-                  <div style={{ width: `${Math.min((city.users / (adminData.totalUsers || 1)) * 100, 100)}%`, height: '100%', background: 'var(--accent-cyan)', borderRadius: 2 }} />
+      {/* Pending Verifications */}
+      <Card style={{ marginBottom: '32px' }}>
+        <h3 style={{ fontSize: '18px', marginBottom: '24px' }}>Pending Partner Verifications</h3>
+        {pendingVerifications.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No pending verifications</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {pendingVerifications.map((user) => (
+              <div key={user.id} style={{ background: 'var(--bg-secondary)', borderRadius: '12px', padding: '20px', display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '20px', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{user.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{user.platform} • {user.workerID}</div>
+                </div>
+                <div style={{ position: 'relative' }}>
+                   <a href={user.platformProofUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-cyan)', fontSize: '13px', textDecoration: 'none' }}>
+                     <img src={user.platformProofUrl} alt="Proof" style={{ width: 60, height: 40, borderRadius: 4, objectFit: 'cover' }} />
+                     <span>View Full Proof <ExternalLink size={14} /></span>
+                   </a>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button 
+                    onClick={() => handleVerify(user.id, false)}
+                    disabled={verifyingId === user.id}
+                    style={{ background: '#FF4D6A22', color: '#FF4D6A', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <XCircle size={16} /> Reject
+                  </button>
+                  <button 
+                    onClick={() => handleVerify(user.id, true)}
+                    disabled={verifyingId === user.id}
+                    style={{ background: '#00FF9C22', color: '#00FF9C', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <CheckCircle size={16} /> Approve
+                  </button>
                 </div>
               </div>
             ))}
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Recent Activity */}
       {adminAnalytics.recentActivity?.length > 0 && (

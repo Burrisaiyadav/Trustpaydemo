@@ -1,14 +1,16 @@
 package com.trustpay.backend.repository;
 
 import com.trustpay.backend.model.Claim;
+import com.trustpay.backend.model.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
-@Repository
 public interface ClaimRepository extends JpaRepository<Claim, Long> {
-    Optional<Claim> findByClaimId(String claimId);
-    List<Claim> findByWorkerId(String workerId);
-    List<Claim> findByWorkerIdOrderByCreatedAtDesc(String workerId);
+    Optional<Claim> findByClaimID(String claimID);
+    List<Claim> findByUserOrderByFiledAtDesc(User user);
+    Page<Claim> findByUserOrderByFiledAtDesc(User user, Pageable pageable);
+    List<Claim> findByUserAndStatus(User user, String status);
 }

@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api.js';
 import { DisruptionBanner, ZeroTouchOverlay, useDashboardTriggers, H3RiskMap } from '../components/AIEngineComponents.jsx';
 import { h3Index } from '../utils/h3_simulator.js';
+import TrustpayRealTime from '../data/TrustpayRealTime';
+import { TrustpayDB, TrustpayComputed } from '../data/TrustpayData';
 
 const UserDashboard = () => {
   const navigate = useNavigate();
@@ -19,6 +21,40 @@ const UserDashboard = () => {
   const [error, setError] = useState(null);
   const [zeroTouchTrigger, setZeroTouchTrigger] = useState(null);
   const { activeTriggers, dismissTrigger } = useDashboardTriggers();
+
+  // ── REAL-TIME STATE ──
+  const [liveWeather, setLiveWeather] = useState(null);
+  const [liveRisk, setLiveRisk] = useState(50);
+  const [liveTicker, setLiveTicker] = useState(new Date().toLocaleTimeString("en-IN"));
+  const [isLive, setIsLive] = useState(false);
+
+  useEffect(() => {
+    // Start real-time engine
+    TrustpayRealTime.startRealTimeUpdates();
+    setIsLive(true);
+
+    const onWeather = (e) => setLiveWeather(e.detail);
+    const onRisk = (e) => setLiveRisk(e.detail.score);
+    const onTicker = (e) => setLiveTicker(e.detail.time);
+    const onEarnings = (e) => {
+        // Force refresh data grid or update local kpis
+        // For simplicity, we'll just trigger a component refresh
+        setClaimStats(prev => ({...prev})); 
+    };
+
+    window.addEventListener('trustpay-weather-update', onWeather);
+    window.addEventListener('trustpay-risk-update', onRisk);
+    window.addEventListener('trustpay-ticker', onTicker);
+    window.addEventListener('trustpay-earnings-update', onEarnings);
+
+    return () => {
+      TrustpayRealTime.stopRealTimeUpdates();
+      window.removeEventListener('trustpay-weather-update', onWeather);
+      window.removeEventListener('trustpay-risk-update', onRisk);
+      window.removeEventListener('trustpay-ticker', onTicker);
+      window.removeEventListener('trustpay-earnings-update', onEarnings);
+    };
+  }, []);
 
   useEffect(() => {
     const syncLocationAndLoad = async () => {
@@ -131,23 +167,16 @@ const UserDashboard = () => {
             <h1 style={{ fontSize: '32px', margin: 0 }}>
               Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}, {user.name?.split(' ')[0] || 'there'} 👋
             </h1>
-            {user.platformBadge && (
-              <div className="platform-badge" style={{ 
-                background: `${user.platformBadge.color}15`, 
-                border: `1px solid ${user.platformBadge.color}33`,
-                color: user.platformBadge.color,
-                fontSize: '11px',
-                padding: '4px 12px'
-              }}>
-                {user.platformBadge.label}
-              </div>
-            )}
+            <div className="live-badge">🔴 LIVE {liveTicker}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '14px' }}>
             <MapPin size={14} />
             <span>{user.zone || 'Zone'}, {user.city} — {user.platform || 'Platform'} Verified</span>
             <span style={{ margin: '0 8px', opacity: 0.2 }}>|</span>
             <span style={{ fontFamily: 'monospace', color: 'var(--accent-cyan)', fontWeight: 600 }}>HEX: {h3Index.getHexForLocation(user.zone, user.city)}</span>
+          </div>
+          <div className="data-freshness-bar" id="data-freshness">
+            📡 Data fresh as of {new Date().toLocaleTimeString()}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -163,9 +192,9 @@ const UserDashboard = () => {
 
       {/* KPI Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-        <Card glow>
+        <Card glow className={isLive ? "value-updated" : ""}>
           <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>THIS WEEK PROTECTED</div>
-          <div style={{ fontSize: '32px', fontWeight: 700, marginBottom: '8px', color: 'var(--accent-cyan)' }}>
+          <div id="kpi-earnings-protected" style={{ fontSize: '32px', fontWeight: 700, marginBottom: '8px', color: 'var(--accent-cyan)' }}>
             ₹{weeklyProtected.toLocaleString()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--accent-green)' }}>
@@ -173,7 +202,7 @@ const UserDashboard = () => {
           </div>
         </Card>
 
-        <Card>
+        <Card className={isLive ? "value-updated" : ""}>
           <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>TOTAL EARNINGS PROTECTED</div>
           <div style={{ fontSize: '28px', fontWeight: 700, marginBottom: '8px' }}>₹{totalProtected.toLocaleString()}</div>
           <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
@@ -181,30 +210,34 @@ const UserDashboard = () => {
           </div>
         </Card>
 
-        <Card>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>PROTECTION SCORE</div>
+        <Card className={isLive ? "value-updated" : ""}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>LIVE RISK LEVEL</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ fontSize: '32px', fontWeight: 700 }}>{user.protectionScore || 50}</div>
+            <div id="kpi-risk-level" style={{ fontSize: '32px', fontWeight: 700, color: liveRisk >= 70 ? '#FF4D6A' : liveRisk >= 45 ? '#FF8C42' : '#00FF9C' }}>
+              {liveRisk >= 70 ? 'HIGH' : liveRisk >= 45 ? 'MEDIUM' : 'LOW'}
+            </div>
             <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>/100</div>
-              <Badge variant={user.protectionScore > 80 ? 'green' : user.protectionScore > 60 ? 'cyan' : 'amber'}>
-                {user.protectionScore > 80 ? 'EXCELLENT' : user.protectionScore > 60 ? 'GOOD' : 'FAIR'}
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Score: {liveRisk}</div>
+              <Badge variant={liveRisk >= 70 ? 'red' : liveRisk >= 45 ? 'amber' : 'green'}>
+                {liveRisk >= 70 ? 'CRITICAL' : liveRisk >= 45 ? 'WARNING' : 'SAFE'}
               </Badge>
             </div>
           </div>
         </Card>
 
         <Card>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>TRUSTPAY REWARDS</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>⭐</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>{liveWeather?.event || 'WEATHER'} STATUS</div>
+          <div id="live-weather-card" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(37, 99, 235, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
+                {liveWeather?.event === 'Heavy Rain' ? '🌧' : liveWeather?.event === 'Heatwave' ? '🌡️' : '☀️'}
+            </div>
             <div>
-              <div style={{ fontSize: '20px', fontWeight: 700 }}>₹{user.rewardsBalance || 450}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Loyalty Credits</div>
+              <div style={{ fontSize: '20px', fontWeight: 700 }}>{liveWeather?.temperature || 32}°C</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{liveWeather?.description || 'Loading weather...'}</div>
             </div>
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--accent-green)', fontWeight: 600 }}>
-            Next Reward: 4 days remaining
+          <div style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+             {liveWeather?.isLive ? '🔴 LIVE FEED ACTIVE' : '📡 Sourcing from IMD'}
           </div>
         </Card>
       </div>

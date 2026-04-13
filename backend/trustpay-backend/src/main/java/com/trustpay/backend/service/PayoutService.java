@@ -1,84 +1,79 @@
 package com.trustpay.backend.service;
 
-import com.trustpay.backend.model.Claim;
-import com.trustpay.backend.model.DisruptionEvent;
-import com.trustpay.backend.model.WorkerZoneLog;
-import com.trustpay.backend.repository.ClaimRepository;
-import com.trustpay.backend.repository.WorkerZoneLogRepository;
+import com.razorpay.RazorpayClient;
+import com.razorpay.RazorpayException;
+import com.razorpay.Order;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import java.time.LocalDateTime;
-import java.util.Optional;
+
+import javax.annotation.PostConstruct;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PayoutService {
 
-    private final ClaimRepository claimRepository;
-    private final WorkerZoneLogRepository zoneLogRepository;
-    private final GeospatialService geospatialService;
+    @Value("${razorpay.key.id:rzp_test_xxxxxxxxxxxxxx}")
+    private String keyId;
 
-    /**
-     * CORE: Evaluates a potential claim using the 5-signal AI verification system
-     */
-    public Claim evaluateClaim(String workerId, DisruptionEvent event) {
-        Optional<WorkerZoneLog> latestLog = zoneLogRepository.findLatestByWorkerId(workerId);
+    @Value("${razorpay.key.secret:xxxxxxxxxxxxxxxxxxxxxxxx}")
+    private String keySecret;
 
-        // -- Signal 1: Active Status (Mock check) --
-        String activeStatus = latestLog.isPresent() ? "VERIFIED" : "FAILED";
+    @Value("${razorpay.account.number:XXXXXXXXXX}")
+    private String accountNumber;
 
-        // -- Signal 2: H3 Zone Presence --
-        String h3Presence = "MISMATCH";
-        if (latestLog.isPresent() && latestLog.get().getH3Index().equals(event.getH3Index())) {
-            h3Presence = "MATCHED";
+    private RazorpayClient razorpayClient;
+
+    @PostConstruct
+    public void init() {
+        try {
+            razorpayClient = new RazorpayClient(keyId, keySecret);
+        } catch (RazorpayException e) {
+            log.error("Failed to initialize Razorpay client: {}", e.getMessage());
         }
-
-        // -- Signal 3: Route Impact --
-        double routeImpact = Math.random() * 0.4 + 0.6; // Mock 60-100% impact
-
-        // -- Signal 4: Activity Drop --
-        double activityDrop = 0.42; // Mock 42% drop vs baseline
-
-        // -- Signal 5: Peer Anomaly --
-        String peerAnomaly = "CORROBORATED";
-
-        // Calculate Confidence Score
-        int confidence = calculateConfidence(activeStatus, h3Presence, routeImpact, activityDrop, peerAnomaly);
-
-        Claim claim = Claim.builder()
-                .workerId(workerId)
-                .eventType(event.getType())
-                .h3Index(event.getH3Index())
-                .estimatedLoss(450.0)
-                .approvedPayout(338.0)
-                .activeStatusSignal(activeStatus)
-                .h3PresenceSignal(h3Presence)
-                .routeImpactScore(routeImpact)
-                .activityDropSignal(activityDrop)
-                .peerAnomalySignal(peerAnomaly)
-                .confidenceScore(confidence)
-                .status(confidence >= 85 ? "APPROVED" : "REVIEW")
-                .processingTime(LocalDateTime.now())
-                .build();
-
-        return claimRepository.save(claim);
     }
 
-    private int calculateConfidence(String active, String h3, double route, double drop, String peer) {
-        double score = 0;
-        if (active.equals("VERIFIED")) score += 25;
-        if (h3.equals("MATCHED")) score += 30;
-        score += route * 15;
-        score += drop * 20;
-        if (peer.equals("CORROBORATED")) score += 10;
-        return (int) Math.round(score);
+    public Map<String, Object> createOrder(double amount, String receipt) {
+        try {
+            JSONObject orderRequest = new JSONObject();
+            orderRequest.put("amount", (int) (amount * 100)); // amount in paise
+            orderRequest.put("currency", "INR");
+            orderRequest.put("receipt", receipt);
+
+            Order order = razorpayClient.orders.create(orderRequest);
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("orderId", order.get("id"));
+            result.put("amount", order.get("amount"));
+            result.put("currency", order.get("currency"));
+            return result;
+        } catch (RazorpayException e) {
+            log.error("Razorpay order creation failed: {}", e.getMessage());
+            return null;
+        }
     }
 
-    public Claim processPayout(String claimId) {
-        return claimRepository.findByClaimId(claimId).map(claim -> {
-            claim.setStatus("PAID");
-            claim.setUpiTxnId("TXN-AUTO-" + System.currentTimeMillis());
-            return claimRepository.save(claim);
-        }).orElseThrow(() -> new RuntimeException("Claim not found"));
+    public Map<String, Object> initiateUPIPayout(String upiId, double amount, String claimId) {
+        // In a real scenario, this would use RazorpayX for Payouts
+        // Here we simulate the logic for a "payout" via their API logic
+        log.info("Initiating UPI payout of ₹{} to {} for claim {}", amount, upiId, claimId);
+        
+        try {
+            // Mocking a successful payout response
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", "pout_" + System.currentTimeMillis());
+            response.put("status", "processed");
+            response.put("amount", amount);
+            response.put("upiId", upiId);
+            return response;
+        } catch (Exception e) {
+            log.error("Payout initiation failed: {}", e.getMessage());
+            return null;
+        }
     }
 }

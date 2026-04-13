@@ -102,7 +102,14 @@ const request = async (method, path, data = null) => {
   }
 
   const options = { method, headers };
-  if (requestBody && method !== 'GET') options.body = JSON.stringify(requestBody);
+  
+  if (data instanceof FormData) {
+    // For FormData, Browser sets boundary automatically, so remove Content-Type header
+    delete headers['Content-Type'];
+    options.body = data;
+  } else if (data && method !== 'GET') {
+    options.body = JSON.stringify(data);
+  }
 
   try {
     const response = await fetch(`${API_BASE}${apiPath}`, options);
@@ -151,6 +158,7 @@ const api = {
     try { await request('POST', '/auth/logout'); } catch (_) { }
     clearToken();
   },
+  submitProof: (formData) => request('POST', '/auth/submit-proof', formData),
 
   // ── PLATFORM CONNECTION (NEW) ──
   sendPlatformOTP: (platform, phone) => request('POST', '/login/platform/send-otp', { platform, phone }),
@@ -162,6 +170,8 @@ const api = {
   confirmPayment: (data) => request('POST', '/policies/payment-success', data),
   getMyPolicy: () => request('GET', '/policies/my-policy'),
   cancelPolicy: () => request('POST', '/policies/cancel'),
+  getAdminPending: () => request('GET', '/admin/pending-verifications'),
+  verifyUser: (userId, approve, reason) => request('POST', `/admin/verify-user/${userId}?approve=${approve}${reason ? `&reason=${reason}` : ''}`),
 
   // ── CLAIMS ──
   initiateClaim: (data) => request('POST', '/claims/initiate', data),

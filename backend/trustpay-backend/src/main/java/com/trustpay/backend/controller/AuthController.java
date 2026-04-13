@@ -1,60 +1,99 @@
 package com.trustpay.backend.controller;
 
-import com.trustpay.backend.dto.AuthRequest;
+import com.trustpay.backend.dto.*;
 import com.trustpay.backend.model.User;
 import com.trustpay.backend.repository.UserRepository;
-import com.trustpay.backend.security.JwtUtil;
+import com.trustpay.backend.security.JwtUtils;
+import com.trustpay.backend.service.FileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.security.Principal;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AuthController {
 
+    private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-
-    @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody User user) {
-        if (userRepository.existsByUsername(user.getUsername())) {
-            return ResponseEntity.badRequest().body("Username already exists");
-        }
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        user.setRole("ROLE_WORKER");
-        return ResponseEntity.ok(userRepository.save(user));
-    }
+    private final PasswordEncoder encoder;
+    private final JwtUtils jwtUtils;
+    private final FileService fileService;
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody AuthRequest request) {
-        return userRepository.findByUsername(request.getUsername())
-                .filter(user -> passwordEncoder.matches(request.getPassword(), user.getPassword()))
-                .map(user -> {
-                    String token = jwtUtil.generateToken(user.getUsername());
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("token", token);
-                    response.put("username", user.getUsername());
-                    response.put("role", user.getRole());
-                    return ResponseEntity.ok((Object) response);
-                })
-                .orElseGet(() -> {
-                    Map<String, String> error = new HashMap<>();
-                    error.put("error", "Invalid credentials");
-                    return ResponseEntity.status(401).body(error);
-                });
+    public ResponseEntity<?> authenticateUser(@RequestBody AuthRequest loginRequest) {
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        String jwt = jwtUtils.generateJwtToken(authentication);
+
+        org.springframework.security.core.userdetails.User userDetails = (org.springframework.security.core.userdetails.User) authentication.getPrincipal();
+        User user = userRepository.findByUsername(userDetails.getUsername()).get();
+        List<String> roles = userDetails.getAuthorities().stream()
+                .map(item -> item.getAuthority())
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(new AuthResponse(jwt, user.getId(), user.getUsername(), user.getEmail(), roles));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@RequestBody SignupRequest signUpRequest) {
+        if (userRepository.findByUsername(signUpRequest.getUsername()).isPresent()) {
+            return ResponseEntity.badRequest().body("Error: Username is already taken!");
+        }
+        if (userRepository.findByEmail(signUpRequest.getEmail()).isPresent()) {
+            return ResponseEntity.badRequest().body("Error: Email is already in use!");
+        }
+
+        User user = User.builder()
+                .username(signUpRequest.getUsername())
+                .email(signUpRequest.getEmail())
+                .password(encoder.encode(signUpRequest.getPassword()))
+                .phone(signUpRequest.getPhone())
+                .name(signUpRequest.getName())
+                .role("USER")
+                .verificationStatus("PENDING")
+                .protectionScore(50)
+                .build();
+
+        userRepository.save(user);
+        return ResponseEntity.ok("User registered successfully!");
+    }
+
+    @PostMapping("/submit-proof")
+    public ResponseEntity<?> submitProof(
+            @RequestParam("platform") String platform,
+            @RequestParam("workerID") String workerID,
+            @RequestParam("file") MultipartFile file,
+            Principal principal) {
+        
+        User user = userRepository.findByUsername(principal.getName()).get();
+        String proofUrl = fileService.uploadFile(file, "proofs");
+        
+        user.setPlatform(platform);
+        user.setWorkerID(workerID);
+        user.setPlatformProofUrl(proofUrl);
+        user.setVerificationStatus("UNDER_REVIEW");
+        
+        userRepository.save(user);
+        return ResponseEntity.ok("Platform proof submitted for verification!");
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> getMe() {
-        String username = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.status(404).build());
+    public ResponseEntity<?> getMe(Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
+        User user = userRepository.findByUsername(principal.getName()).get();
+        return ResponseEntity.ok(user);
     }
 }

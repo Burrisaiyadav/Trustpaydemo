@@ -1,44 +1,45 @@
-// ── TRUSTPAY SOCKET.IO CLIENT ──
-import { io } from 'socket.io-client';
+// ── TRUSTPAY STOMP/SOCKJS CLIENT (REPLACE SOCKET.IO) ──
+import SockJS from 'sockjs-client';
+import Stomp from 'stompjs';
 import api from './api.js';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:8080/ws-trustpay';
 
+let stompClient = null;
 let socket = null;
 
-export const getSocket = () => {
-  if (!socket) {
-    socket = io(SOCKET_URL, {
-      auth: { token: api.getToken() },
-      autoConnect: false,
-      reconnection: true,
-      reconnectionDelay: 2000,
-      reconnectionAttempts: 5,
-    });
+export const connectSocket = (claimID, onMessage, onResult) => {
+  if (stompClient && stompClient.connected) return stompClient;
 
-    socket.on('connect', () => {
-      console.log('[Socket] Connected:', socket.id);
-    });
+  socket = new SockJS(SOCKET_URL);
+  stompClient = Stomp.over(socket);
+  stompClient.debug = null; // Disable logging
 
-    socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
-    });
+  stompClient.connect({}, (frame) => {
+    console.log('[STOMP] Connected');
+    
+    // Subscribe to claim processing steps
+    if (claimID) {
+      stompClient.subscribe(`/topic/claim/${claimID}`, (message) => {
+        if (onMessage) onMessage(JSON.parse(message.body));
+      });
 
-    socket.on('connect_error', (err) => {
-      console.warn('[Socket] Connection error (backend may be offline):', err.message);
-    });
-  }
-  return socket;
-};
+      stompClient.subscribe(`/topic/claim/${claimID}/result`, (message) => {
+        if (onResult) onResult(JSON.parse(message.body));
+      });
+    }
+  }, (error) => {
+    console.warn('[STOMP] Connection error:', error);
+  });
 
-export const connectSocket = () => {
-  const s = getSocket();
-  if (!s.connected) s.connect();
-  return s;
+  return stompClient;
 };
 
 export const disconnectSocket = () => {
-  if (socket?.connected) socket.disconnect();
+  if (stompClient) {
+    stompClient.disconnect();
+    stompClient = null;
+  }
 };
 
-export default { getSocket, connectSocket, disconnectSocket };
+export default { connectSocket, disconnectSocket };

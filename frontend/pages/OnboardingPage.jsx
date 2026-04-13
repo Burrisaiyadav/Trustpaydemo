@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { LogOut, User, Shield, ShieldCheck, Activity, AlertCircle, ArrowUpRight } from 'lucide-react';
+import { LogOut, User, Shield, ShieldCheck, Activity, AlertCircle, ArrowUpRight, Camera } from 'lucide-react';
+import PlatformVerification from './onboarding/PlatformVerification';
+import VerificationPending from './onboarding/VerificationPending';
+import PAN_VERIFICATION from '../utils/panVerification';
 import './Onboarding.css';
 
 export default function OnboardingPage() {
@@ -42,7 +45,16 @@ export default function OnboardingPage() {
         alert('Please select at least one work platform.');
         return;
       }
-      setStep(3.1);
+      setStep(2.5);
+    }
+    else if (step === 2.5) {
+      if (user?.verificationStatus === 'UNDER_REVIEW') {
+          // Stay here or show pending
+      } else if (user?.verificationStatus === 'APPROVED') {
+          setStep(3.1);
+      } else {
+          // If not submitted yet, the child component handles submission
+      }
     }
     else if (step === 3.1) {
       if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formData.panNumber.toUpperCase())) {
@@ -236,46 +248,195 @@ export default function OnboardingPage() {
                 </div>
               </div>
             )}
+            {step === 2.5 && (
+              <div className="onboarding-step-content fade-in">
+                {user?.verificationStatus === 'UNDER_REVIEW' ? (
+                  <VerificationPending />
+                ) : (
+                  <PlatformVerification 
+                    onComplete={() => {
+                      // Backend will update status to UNDER_REVIEW
+                      window.location.reload(); 
+                    }} 
+                  />
+                )}
+              </div>
+            )}
 
             {step === 3.1 && (
               <div className="onboarding-step-content fade-in">
-                <h1 className="onboarding-step-title">Add your PAN details</h1>
-                <p className="onboarding-step-desc">
-                  We require this to verify your identity
-                </p>
-                <div className="onboarding-input-group">
-                  <label>PAN Number</label>
-                  <input 
-                    type="text" 
-                    className="onboarding-input"
-                    value={formData.panNumber}
-                    onChange={(e) => setFormData({...formData, panNumber: e.target.value.toUpperCase()})}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                    autoFocus
-                  />
+                <div className="pan-step">
+                  <div className="pan-header">
+                    <div className="pan-icon">🪪</div>
+                    <h2>PAN Card Verification</h2>
+                    <p>Required for income protection claims above ₹50,000/year</p>
+                  </div>
+
+                  <div className="onboarding-input-group">
+                    <label className="form-label">
+                      PAN Number
+                      <span className="label-hint" style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>Permanent Account Number</span>
+                    </label>
+
+                    <div className={`pan-input-wrapper ${formData.panFormatValid ? 'valid' : formData.panNumber.length === 10 ? 'invalid' : ''}`} id="pan-input-wrapper">
+                      <span className="pan-prefix-icon">🪪</span>
+                      <input
+                        type="text"
+                        id="pan-input"
+                        className="pan-input"
+                        placeholder="ABCDE1234F"
+                        maxlength="10"
+                        autocomplete="off"
+                        spellcheck="false"
+                        value={formData.panNumber}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                          const result = PAN_VERIFICATION.validateFormat(val);
+                          setFormData({
+                            ...formData, 
+                            panNumber: val, 
+                            panFormatValid: result.valid,
+                            panFormatError: result.error,
+                            panHint: result.hint
+                          });
+                        }}
+                        style={{ textTransform:'uppercase', letterSpacing:'2px', fontFamily:'var(--font-mono)' }}
+                      />
+                      <span className={`pan-status-dot ${formData.panFormatValid ? 'valid' : formData.panNumber.length === 10 ? 'invalid' : ''}`}></span>
+                    </div>
+
+                    <div className="pan-format-guide">
+                      <div className="pan-format-row">
+                        <span className={`fmt-box letters ${formData.panNumber.length >= 5 && /^[A-Z]{5}/.test(formData.panNumber) ? 'valid' : formData.panNumber.length >= 5 ? 'invalid' : ''}`} title="5 Letters">ABCDE</span>
+                        <span className={`fmt-box numbers ${formData.panNumber.length >= 9 && /^[A-Z]{5}[0-9]{4}/.test(formData.panNumber) ? 'valid' : formData.panNumber.length >= 9 ? 'invalid' : ''}`} title="4 Numbers">1234</span>
+                        <span className={`fmt-box letter ${formData.panNumber.length === 10 && /[A-Z]$/.test(formData.panNumber) ? 'valid' : formData.panNumber.length === 10 ? 'invalid' : ''}`} title="1 Letter">F</span>
+                      </div>
+                      <div className="pan-format-labels" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <span>5 letters</span>
+                        <span>4 numbers</span>
+                        <span>1 letter</span>
+                      </div>
+                    </div>
+
+                    {formData.panNumber && (
+                      <div className="pan-feedback" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', marginTop: '12px' }}>
+                        <span className="feedback-icon">{formData.panFormatValid ? '✅' : '❌'}</span>
+                        <span className={`feedback-text ${formData.panFormatValid ? 'success' : 'error'}`}>
+                          {formData.panFormatValid ? formData.panHint : formData.panFormatError}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="onboarding-input-group" style={{ marginTop: '24px' }}>
+                    <label className="form-label">Date of Birth</label>
+                    <input
+                      type="date"
+                      className="onboarding-input"
+                      value={formData.dob}
+                      onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                      max={new Date().toISOString().split("T")[0]}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Must match your PAN records</p>
+                  </div>
+
+                  {!formData.panVerified && !formData.panLoading && (
+                    <button
+                      className="btn-primary"
+                      style={{ width: '100%', marginTop: '24px', opacity: formData.panFormatValid ? 1 : 0.5, cursor: formData.panFormatValid ? 'pointer' : 'not-allowed' }}
+                      disabled={!formData.panFormatValid}
+                      onClick={async () => {
+                        setFormData(prev => ({ ...prev, panLoading: true }));
+                        const result = await PAN_VERIFICATION.verifyWithAPI(formData.panNumber, formData.fullName);
+                        setFormData(prev => ({ 
+                          ...prev, 
+                          panLoading: false, 
+                          panVerified: result.verified, 
+                          panResult: result,
+                          panError: result.error
+                        }));
+                        if (result.verified) {
+                          setStep(3.2); // Move to review step
+                        }
+                      }}
+                    >
+                      🔍 Verify PAN in Real-Time
+                    </button>
+                  )}
+
+                  {formData.panLoading && (
+                    <div className="pan-loading" style={{ marginTop: '24px' }}>
+                      <div className="pan-load-step">
+                        <div className="pls-dot active"></div>
+                        <span>Connecting to Income Tax database...</span>
+                      </div>
+                      <div className="pan-load-step" style={{ opacity: 0.5 }}>
+                        <div className="pls-dot"></div>
+                        <span>Validating details...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {formData.panError && (
+                    <div className="pan-error-card" style={{ marginTop: '24px' }}>
+                      <span className="pan-error-icon">❌</span>
+                      <div className="pan-error-title">Verification Failed</div>
+                      <div className="pan-error-msg">{formData.panError}</div>
+                      <button className="btn-ghost" style={{ width: '100%', marginTop: '12px' }} onClick={() => setFormData({ ...formData, panError: null })}>
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="pan-security" style={{ marginTop: '32px' }}>
+                    <span>🔒</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Verified via Sandbox.co.in KYC API + NSDL. Your PAN is encrypted and never stored in plain text.
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
 
-            {step === 3.2 && (
+            {step === 3.2 && formData.panResult && (
               <div className="onboarding-step-content fade-in">
                 <h1 className="onboarding-step-title">Review your PAN details</h1>
-                <div className="pan-review-card">
-                  <div className="pan-row">
-                    <span className="pan-label">NAME AS PER PAN</span>
-                    <span className="pan-value">{formData.panName}</span>
+                <div className="pan-success-card">
+                  <div className="pan-success-header">
+                    <span className="pan-tick">✅</span>
+                    <div>
+                      <div className="pan-success-title">PAN Verified Successfully</div>
+                      <div className="pan-success-source">{formData.panResult.source}</div>
+                    </div>
                   </div>
-                  <div className="pan-row" style={{ marginTop: '16px' }}>
-                    <span className="pan-label">PAN NUMBER</span>
-                    <span className="pan-value">{formData.panNumber}</span>
-                  </div>
-                  <div className="pan-verified-badge">
-                    <ShieldCheck size={14} /> VERIFIED
+
+                  <div className="pan-details-grid">
+                    <div className="pan-detail-row">
+                      <span className="pd-label">PAN Number</span>
+                      <span className="pd-value mono">{formData.panResult.pan}</span>
+                    </div>
+                    <div className="pan-detail-row">
+                      <span className="pd-label">Name on PAN</span>
+                      <span className="pd-value">{formData.panResult.name}</span>
+                    </div>
+                    <div className="pan-detail-row">
+                      <span className="pd-label">Name Match</span>
+                      <span className={`pd-value ${formData.panResult.nameMatch >= 70 ? "success" : "warning"}`}>
+                        {formData.panResult.nameMatchText}
+                      </span>
+                    </div>
+                    <div className="pan-detail-row">
+                      <span className="pd-label">PAN Type</span>
+                      <span className="pd-value">{formData.panResult.panType}</span>
+                    </div>
+                    <div className="pan-detail-row">
+                      <span className="pd-label">PAN Status</span>
+                      <span className="pd-value success" style={{ color: '#00FF9C' }}>{formData.panResult.status}</span>
+                    </div>
                   </div>
                 </div>
-                <p style={{ marginTop: '24px', fontSize: '13px', color: '#697386' }}>
-                  If these details are incorrect, please go back and edit your PAN.
+                <p style={{ marginTop: '24px', fontSize: '13px', color: '#64748B' }}>
+                  Your identity is now verified. Access to protection is active.
                 </p>
               </div>
             )}

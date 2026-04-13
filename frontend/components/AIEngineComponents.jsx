@@ -127,8 +127,14 @@ export const ZeroTouchOverlay = ({ trigger, onComplete }) => {
   }, []);
 
   const runProcess = async () => {
-    const result = await TrustpayZeroTouch.processClaimSteps(
+    const claimInit = await TrustpayZeroTouch.initiateSingleTapClaim(trigger.triggerID, payout, trigger);
+    
+    const result = await TrustpayZeroTouch.autoProcessClaim(
+      claimInit.claimID,
       trigger,
+      user,
+      plan,
+      payout,
       (step) => setCompletedSteps(prev => [...prev, step]),
       (pct) => {
         setProgress(pct);
@@ -163,12 +169,12 @@ export const ZeroTouchOverlay = ({ trigger, onComplete }) => {
     const particles = Array.from({ length: 50 }, () => ({
       x: Math.random() * canvas.width, y: -10,
       vx: (Math.random() - 0.5) * 4, vy: Math.random() * 3 + 2,
-      color: ['#2563EB', '#059669', '#F59E0B', '#FFFFFF'][Math.floor(Math.random() * 4)],
+      color: ['#10B981', '#2563EB', '#F59E0B', '#FFFFFF'][Math.floor(Math.random() * 4)],
       size: Math.random() * 6 + 3, angle: Math.random() * 360, spin: (Math.random() - 0.5) * 10, vy0: 0,
     }));
     let frame = 0;
     const animate = () => {
-      if (frame++ > 80) return;
+      if (frame++ > 120) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       particles.forEach(p => {
         p.x += p.vx; p.y += p.vy; p.angle += p.spin; p.vy += 0.1;
@@ -194,11 +200,11 @@ export const ZeroTouchOverlay = ({ trigger, onComplete }) => {
         {!claimResult && (
           <div className="zt-steps">
             {[
-              { id: 1, name: 'Active Status' },
-              { id: 2, name: 'H3 Zone Presence' },
-              { id: 3, name: 'Route Impact' },
-              { id: 4, name: 'Activity Drop' },
-              { id: 5, name: 'Peer Anomaly' },
+              { id: "zt-step-1", name: 'Disruption Verified' },
+              { id: "zt-step-2", name: 'Location Auto-Detected' },
+              { id: "zt-step-3", name: 'Earnings Impact Focused' },
+              { id: "zt-step-4", name: 'Fraud Check Passed' },
+              { id: "zt-step-5", name: 'Policy Coverage Applied' },
             ].map(s => {
               const completed = completedSteps.find(cs => cs.id === s.id);
               return (
@@ -223,7 +229,7 @@ export const ZeroTouchOverlay = ({ trigger, onComplete }) => {
 
         {claimResult && (
           <div className="zt-payout-result">
-            <div className="zt-check">✅</div>
+            <div className="zt-check">✓</div>
             <div className="zt-approved-label">INSTANT REIMBURSEMENT</div>
             <div className="zt-amount">₹{countUp}</div>
             <div className="zt-upi">Sent to {user.upiID || 'your UPI'}</div>
@@ -247,21 +253,23 @@ export const DynamicPricingBanner = ({ pricingData }) => {
     <div className="dynamic-pricing-banner">
       <div className="dp-header">
         <div className="dp-icon">🤖</div>
-        <div>
+        <div className="dp-title-info">
           <h3>AI-Personalised Pricing</h3>
           <p>Your premium is adjusted based on {activeFactors.length} key risk factors</p>
         </div>
         <div className="dp-confidence">{confidenceScore}% confidence</div>
       </div>
 
-      <div className="dp-factors-grid" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '12px', marginBottom: '24px' }}>
+      <div className="dp-factors-grid">
         {activeFactors.map((factor, i) => (
-          <div key={i} className={`dp-factor-pill ${factor.positive ? 'dp-pill-positive' : 'dp-pill-negative'}`} style={{ flex: '1 1 180px', maxWidth: '240px', padding: '16px 12px' }}>
-            <span className="dp-factor-icon" style={{ fontSize: '24px', marginBottom: '8px' }}>{factor.icon}</span>
-            <span className="dp-factor-name" style={{ fontSize: '11px', fontWeight: 600 }}>{factor.name}</span>
-            <span className={`dp-factor-adj ${factor.positive ? 'adj-positive' : 'adj-negative'}`} style={{ fontSize: '16px', marginTop: '4px' }}>
-              {factor.adjustment > 0 ? '+' : ''}{factor.adjustment}
-            </span>
+          <div key={i} className={`dp-factor-pill ${factor.positive ? 'dp-pill-positive' : 'dp-pill-negative'}`}>
+            <span className="dp-factor-icon">{factor.icon}</span>
+            <div className="dp-pill-text">
+               <span className="dp-factor-name">{factor.name}</span>
+               <span className={`dp-factor-adj ${factor.positive ? 'adj-positive' : 'adj-negative'}`}>
+                 {factor.adjustment > 0 ? '+' : ''}{factor.adjustment}
+               </span>
+            </div>
           </div>
         ))}
       </div>
@@ -299,15 +307,9 @@ export const useDashboardTriggers = () => {
 
     TrustpayTriggers.startAllTriggers(user, location);
 
-    // Guarantee at least 1 banner always shows — fires after 1s so layout is ready
-    const demoTimer = setTimeout(() => {
-      TrustpayTriggers.forceDemoTrigger(user);
-    }, 1000);
-
     return () => {
       unsubscribe();
       TrustpayTriggers.stopAllTriggers();
-      clearTimeout(demoTimer);
     };
   }, []);
 

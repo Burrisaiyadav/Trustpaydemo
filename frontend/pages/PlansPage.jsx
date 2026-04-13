@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
-import { CheckCircle, MapPin, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { CheckCircle, MapPin, ChevronDown, ChevronUp, Loader2, Shield, Clock, Activity, TrendingUp } from 'lucide-react';
 import api from '../services/api.js';
 import { TrustpayDB } from '../data/TrustpayData.js';
 import { TrustpayDynamicPricing } from '../data/TrustpayAI_Engine.js';
 import { DynamicPricingBanner } from '../components/AIEngineComponents.jsx';
+import TrustpayOnboarding from '../data/TrustpayOnboarding_Logic';
+import TrustpayRealTime from '../data/TrustpayRealTime';
 
 const PlansPage = () => {
   const [user, setUser] = useState(null);
@@ -21,6 +23,7 @@ const PlansPage = () => {
   const [masterPricing, setMasterPricing] = useState(null);
   const [selectedCovers, setSelectedCovers] = useState(['Rain', 'AQI']);
   const [customPremium, setCustomPremium] = useState(25);
+  const [monitoringStatus, setMonitoringStatus] = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -29,7 +32,12 @@ const PlansPage = () => {
           api.getMe(),
           api.getPlans(),
         ]);
-        setUser(meRes.user);
+        const userData = meRes.user || TrustpayDB.currentUser;
+        setUser(userData);
+
+        // ── 7-DAY MONITORING CHECK ──
+        const mStatus = TrustpayOnboarding.getMonitoringStatus(userData);
+        setMonitoringStatus(mStatus);
 
         // Use API plans or fall back to TrustpayDB if backend is offline
         const rawPlans = plansRes.plans && plansRes.plans.length > 0
@@ -42,7 +50,6 @@ const PlansPage = () => {
         setSelectedZone(zone);
 
         // Calculate AI pricing for all plans after user data is available
-        const userData = TrustpayDB.currentUser;
         const locationData = { zone };
         const pricing = {};
         const bonus = {};
@@ -76,12 +83,84 @@ const PlansPage = () => {
     }
   };
 
-  if (loading || !user) {
+  if (loading || !user || !monitoringStatus) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '80vh', gap: '24px', color: 'var(--text-secondary)' }}>
         <div style={{ textAlign: 'center' }}>
           <Loader2 size={48} className="animate-spin" style={{ marginBottom: '16px', opacity: 0.5 }} />
-          <p>Analyzing Coverage...</p>
+          <p>Analyzing Account Activity...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RENDER MONITORING SCREEN IF INCOMPLETE ──
+  if (!monitoringStatus.complete && !user.plan) {
+    const recommendation = TrustpayOnboarding.getRecommendedPlanAfterMonitoring(monitoringStatus);
+    return (
+      <div className="monitoring-page animate-fade-in-up">
+        <div className="monitoring-card glass-panel">
+          <div className="mon-header">
+            <div className="mon-shield">🛡️</div>
+            <h2>Verify Your Worker Profile</h2>
+            <p>We monitor your activity for 7 days to calculate your personalized AI risk score and premium.</p>
+          </div>
+
+          <div className="mon-progress-ring">
+            <svg width="180" height="180" viewBox="0 0 180 180">
+              <circle cx="90" cy="90" r="80" fill="none" stroke="var(--border)" strokeWidth="8" />
+              <circle cx="90" cy="90" r="80" fill="none" stroke="var(--accent-cyan)" strokeWidth="8"
+                strokeDasharray={`${(monitoringStatus.progressPct / 100) * 502} 502`}
+                strokeLinecap="round" transform="rotate(-90 90 90)" />
+            </svg>
+            <div className="mon-ring-label">
+              <span className="mon-days-done">{monitoringStatus.daysActive}</span>
+              <span className="mon-days-total">OF 7 DAYS</span>
+            </div>
+          </div>
+
+          <div className="mon-waiting">
+             <Clock size={18} />
+             <span>Monitoring in progress... {monitoringStatus.daysRemaining} days left</span>
+          </div>
+
+          <div className="mon-metrics">
+            <div className="mon-metric">
+              <span className="mm-label">Avg. Earnings</span>
+              <span className="mm-value">₹{monitoringStatus.avgEarnings}/day</span>
+            </div>
+            <div className="mon-metric">
+              <span className="mm-label">Consistency</span>
+              <span className="mm-value">{monitoringStatus.metrics.consistencyScore}%</span>
+            </div>
+          </div>
+
+          <div className="mon-info">
+            <p><strong>Why the 7-day wait?</strong></p>
+            <p style={{ opacity: 0.8 }}>Trustpay is built on high-trust data. By observing your patterns, our AI can offer you lower premiums than traditional insurance.</p>
+          </div>
+
+          <div className="mon-recommendation glass-panel" style={{ marginTop: '24px', background: 'rgba(37, 99, 235, 0.05)' }}>
+             <div className="rec-header">
+               <Activity size={18} color="var(--accent-cyan)" />
+               <h3>Current AI Prediction</h3>
+             </div>
+             <div className="rec-plan-badge">PRELIMINARY: {recommendation.plan.toUpperCase()}</div>
+             <div className="rec-price">
+               <span className="rec-price-crossed">₹{TrustpayDynamicPricing.BASE_PREMIUMS[recommendation.plan]}</span>
+               <span className="rec-price-ai">₹{Math.round(TrustpayDynamicPricing.BASE_PREMIUMS[recommendation.plan] * 0.8)}</span>
+               <span className="rec-period">/week</span>
+               <span className="rec-savings">AI SAVE 20%</span>
+             </div>
+             <p className="rec-reason">{recommendation.reason}</p>
+             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+               *Your final price may change based on the remaining {monitoringStatus.daysRemaining} days of data.
+             </div>
+          </div>
+
+          <Button variant="outline" style={{ width: '100%', marginTop: '32px' }} onClick={() => navigate('/dashboard')}>
+            Return to Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -302,30 +381,31 @@ const PlansPage = () => {
               </h3>
               
               {/* AI Dynamic Price Block */}
-            {aiPricing[plan.id] ? (
-              <div className="plan-price-block">
-                {aiPricing[plan.id].savedVsBase > 0 && (
-                  <span className="plan-base-price-crossed">₹{aiPricing[plan.id].basePremium}</span>
-                )}
-                <div>
-                  <span className="plan-ai-price">₹{aiPricing[plan.id].finalPremium}</span>
-                  <span className="plan-period">/week</span>
-                </div>
-                {aiPricing[plan.id].savedVsBase > 0 && (
-                  <div className="plan-savings-badge">AI saved you ₹{aiPricing[plan.id].savedVsBase}</div>
-                )}
-                {bonusCoverage[plan.id]?.bonusHours > 0 && (
-                  <div className="bonus-hours-badge">
-                    +{bonusCoverage[plan.id].bonusHours} bonus coverage hours
-                    <span style={{ fontSize: '10px', opacity: 0.8 }}>{bonusCoverage[plan.id].reason}</span>
+              {aiPricing[plan.id] ? (
+                <div className="plan-price-block" style={{ margin: '16px 0 24px' }}>
+                  {aiPricing[plan.id].savedVsBase > 0 && (
+                    <span className="strike-price">₹{aiPricing[plan.id].basePremium}</span>
+                  )}
+                  <div style={{ display: 'inline-block' }}>
+                    <span className="ai-price-tag" style={{ fontSize: '42px' }}>₹{aiPricing[plan.id].finalPremium}</span>
+                    <span style={{ fontSize: '14px', color: 'var(--text-secondary)', marginLeft: '4px' }}>/week</span>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ fontSize: '48px', fontWeight: 700, margin: '16px 0' }}>
-                ₹{plan.weeklyPremium}<span style={{ fontSize: '16px', color: 'var(--text-muted)' }}>/week</span>
-              </div>
-            )}
+                  {aiPricing[plan.id].savedVsBase > 0 && (
+                    <div className="dp-summary-pill" style={{ display: 'block', padding: '4px 12px', fontSize: '11px', marginTop: '8px', marginBottom: '8px' }}>
+                      AI saved you ₹{aiPricing[plan.id].savedVsBase}
+                    </div>
+                  )}
+                  {bonusCoverage[plan.id]?.bonusHours > 0 && (
+                    <div className="bonus-hours-badge">
+                      ⚡ +{bonusCoverage[plan.id].bonusHours} bonus coverage hours
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: '48px', fontWeight: 700, margin: '16px 0' }}>
+                  ₹{plan.weeklyPremium}<span style={{ fontSize: '16px', color: 'var(--text-muted)' }}>/week</span>
+                </div>
+              )}
             
               <div style={{ marginBottom: '32px', paddingBottom: '20px', borderBottom: '1px dashed var(--border)' }}>
                 <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Coverage up to</span>
